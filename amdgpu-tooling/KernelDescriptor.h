@@ -246,6 +246,17 @@ public:
   bool verify() const;
 
   void writeToMemory(char *memPtr) const;
+  bool isGfx6() const;
+  bool isGfx7() const;
+  bool isGfx8() const;
+  bool isGfx9() const;
+  bool isGfx90aOr940() const;
+  bool isGfx9Plus() const;
+  bool isGfx10() const;
+  bool isGfx10Plus() const;
+  bool isGfx11() const;
+
+  std::string name;
 
 private:
   // read numBytes bytes starting at fromIndex in rawBytes into data
@@ -266,19 +277,8 @@ private:
   bool verifyKernelCodeProperties() const;
   void dumpKernelCodeProperties(std::ostream &os) const;
 
-  bool isGfx6() const;
-  bool isGfx7() const;
-  bool isGfx8() const;
-  bool isGfx9() const;
-  bool isGfx90aOr940() const;
-  bool isGfx9Plus() const;
-  bool isGfx10() const;
-  bool isGfx10Plus() const;
-  bool isGfx11() const;
-
   bool supportsArchitectedFlatScratch() const;
 
-  std::string name;
 
   // canonical kernel descriptor struct
   llvm::amdhsa::kernel_descriptor_t kdRepr;

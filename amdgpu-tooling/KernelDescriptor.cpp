@@ -234,7 +234,7 @@ void KernelDescriptor::setKernelCodeEntryByteOffset(int64_t value) {
 #define CHECK_WIDTH(MASK) ((value) >> (MASK##_WIDTH) == 0)
 
 #define GET_ITH_BIT_AFTER(MASK, i)                                             \
-  (((fourByteBuffer & (1 << (MASK##_WIDTH) + i - 1)) << (MASK##_SHIFT)) != 0)
+  (((fourByteBuffer & (1 << ((MASK##_WIDTH) + i - 1))) << (MASK##_SHIFT)) != 0)
 
 // ----- COMPUTE_PGM_RSRC3 begin -----
 //
@@ -902,7 +902,7 @@ bool KernelDescriptor::verifyCOMPUTE_PGM_RSRC2() const {
     return false;
 
   // the last bit is reserved and must be 0
-  if (fourByteBuffer & 1 != 0)
+  if ( (fourByteBuffer & 1) )
     return false;
 
   return true;
@@ -923,7 +923,7 @@ bool KernelDescriptor::verifyCOMPUTE_PGM_RSRC2() const {
 #define CHECK_WIDTH(MASK) ((value) >> (MASK##_WIDTH) == 0)
 
 #define GET_ITH_BIT_AFTER(MASK, i)                                             \
-  (((twoByteBuffer & (1 << (MASK##_WIDTH) + i - 1)) << (MASK##_SHIFT)) != 0)
+  (((twoByteBuffer & (1 << ((MASK##_WIDTH) + i - 1))) << (MASK##_SHIFT)) != 0)
 
 // ----- KERNEL_CODE_PROPERTIES begin -----
 //
