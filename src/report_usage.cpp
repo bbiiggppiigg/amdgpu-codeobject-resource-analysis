@@ -30,6 +30,8 @@ typedef struct {
 }per_kernel_data;
 
 std::map<std::string, per_kernel_data > kernel_data;
+std::map<std::string, std::string> prettyNameMap;
+std::map<std::string, std::string> uglyNameMap;
 
 void parse_note(ELFIO::section * noteSection )
 {
@@ -91,33 +93,20 @@ void parse_note(ELFIO::section * noteSection )
         }
         kernarg_list_map[".sgpr_spill_count"].convert(sgpr_spill_count); 
         kernarg_list_map[".vgpr_spill_count"].convert(vgpr_spill_count); 
+        std::string pname = prettyNameMap[kname];
         if(kernel_data.count(kname)==0){
             per_kernel_data  data;
-            data.note_sgpr_count = sgpr_count;
-            data.note_vgpr_count = vgpr_count;
-
-            kernel_data[kname] = data;
-        } 
-        //cout << __func__ << " " << kname << endl;
+            kernel_data[pname] = data;
+        }
+        
+        kernel_data[pname].note_sgpr_count = sgpr_count;
+        kernel_data[pname].note_vgpr_count = vgpr_count;
 #if 0
         cout << " kernel name = " << kname << endl;
         cout << " sgpr , vgpr , agpr usage = " << sgpr_count << " " << vgpr_count << " " << agpr_count << endl;
         cout << " kernarg_segment_size, group_segment_size(LDS) , private_segment_size = " << kernarg_segment_size 
             << " " << group_segment_fixed_size << " " << private_segment_fixed_size << endl;
 #endif
-        /*
-           std::map<std::string, msgpack::object> arg_list_ele_map;
-           for (  size_t arg_id ; arg_id< arg_list_map.size() ;arg_id++){
-        //std::cout << arg_list_map[i] << std::endl;    
-
-        arg_list_map[arg_id].convert(arg_list_ele_map);
-        uint32_t offset = 0, size = 0;
-        arg_list_ele_map[".offset"].convert(offset);
-        arg_list_ele_map[".size"].convert(size);
-        std::cout << " offset =  " << offset << " size = " << size << std::endl;
-        if(offset + size > new_offset_loc)
-        new_offset_loc = offset + size;
-        }*/
     }
 }
 
@@ -130,113 +119,44 @@ ELFIO::section *getSection(const std::string &sectionName,
     return nullptr;
 }
 
-
-#define IS_SGPR(x) ( x == Dyninst::amdgpu_vega::SGPR || x == Dyninst::amdgpu_gfx908::SGPR || x == Dyninst::amdgpu_gfx90a::SGPR )
-#define IS_VGPR(x) ( x == Dyninst::amdgpu_vega::VGPR || x == Dyninst::amdgpu_gfx908::VGPR || x == Dyninst::amdgpu_gfx90a::VGPR )
-#define IS_ACC_VGPR(x) ( x == Dyninst::amdgpu_gfx908::ACC_VGPR || x == Dyninst::amdgpu_gfx90a::ACC_VGPR )
-#define MAX(x,y) ((x > y ) ? x : y)
-
-
-void getMaxRegisterUsed(InstructionDecoder & decoder, ParseAPI::Function * f, int32_t & max_sgpr , int32_t & max_vgpr ,int32_t & max_acc_vgpr){
-    uint64_t max_sgpr_addr, max_vgpr_addr ,max_acc_vgpr_addr;
-    std::map<Dyninst::Address,bool> seen;
-    auto blocks = f->blocks();
-    auto bit = blocks.begin();
-    max_sgpr = max_vgpr = max_acc_vgpr = -1;
-    max_sgpr_addr = max_vgpr_addr = max_acc_vgpr_addr = 0;
-    for(; bit != blocks.end(); bit++){
-        Block * b = * bit;
-        if(seen.find(b->start()) != seen.end()) continue;
-        seen[b->start()] = true;
-        Dyninst::Address currAddr = b->start();
-        Dyninst::Address endAddr = b->end();
-        while( currAddr < endAddr){
-            Instruction instr = decoder.decode(
-                    (unsigned char * ) f->isrc()->getPtrToInstruction(currAddr));    
-#ifdef DEBUG
-            cout << std::hex << " " << currAddr << " " << instr.format() << endl;
-#endif
-            std::vector<Dyninst::InstructionAPI::Operand> operands;
-            instr.getOperands(operands);
-            for( auto & opr : operands){
-                //boost::shared_ptr<RegisterAST::Ptr> reg = boost::dynamic_pointer_cast<RegisterAST::Ptr>(opr.getValue());
-                auto reg = boost::dynamic_pointer_cast<RegisterAST>( (opr.getValue()));
-                if(reg){
-                    Dyninst::MachRegister m_Reg = reg->getID();
-                    int32_t reg_id = m_Reg & 0xff;
-                    uint32_t reg_class = m_Reg.regClass();
-
-                    if( IS_SGPR(reg_class) & (max_sgpr < reg_id) ){
-                        max_sgpr = reg_id;
-                        max_sgpr_addr = currAddr;
-                    }
-                    if( IS_VGPR(reg_class) & (max_vgpr < reg_id) ){
-                        max_vgpr = reg_id;
-                        max_vgpr_addr = currAddr;
-                    }
-                    if( IS_ACC_VGPR(reg_class) & (max_acc_vgpr < reg_id) ){
-                        max_acc_vgpr = reg_id;
-                        max_acc_vgpr_addr = currAddr;
-                    }
-                }
-            }
-            currAddr += instr.size();
-        }
-    }
-    //Instruction instr = decoder.decode(
-    //               (unsigned char * ) f->isrc()->getPtrToInstruction(max_sgpr_addr));    
-    //fprintf(stderr," max_sgpr_addr = 0x%lx, %u, %s\n", max_sgpr_addr,max_sgpr,instr.format().c_str());
-    //fprintf(stderr," max_vgpr_addr = 0x%lx, %u\n", max_vgpr_addr,max_vgpr);
-    //fprintf(stderr," max_acc_vgpr_addr = 0x%lx, %u\n", max_acc_vgpr_addr,max_acc_vgpr);
-    max_sgpr += 1;
-    max_vgpr += 1;
-    max_acc_vgpr += 1;
-
-}
 char * filename;
 bool first = true;
-
-void parseInstructions( char * binary_path ){
-    SymtabCodeSource * scs = new SymtabCodeSource(binary_path);
-
-    CodeObject * dyn_co = new CodeObject(scs);
-
-    dyn_co->parse();
-    auto arch = scs -> getArch();
-    InstructionDecoder decoder("",InstructionDecoder::maxInstructionLength,arch);
-    const CodeObject::funclist & all = dyn_co->funcs();
-    auto fit = all.begin();
-    for( ; fit != all.end(); fit++){
-        ParseAPI::Function * f = * fit;
-
-        std::string kname = f->name();
-        int32_t max_sgpr, max_vgpr , max_acc_vgpr;
-        getMaxRegisterUsed(decoder, f , max_sgpr  , max_vgpr, max_acc_vgpr);
-        if(kernel_data.count(kname)==0){
-            assert(0);
-        }else{
-            kernel_data[kname].parse_sgpr_count = max_sgpr;
-            kernel_data[kname].parse_vgpr_count = max_vgpr;
-        } 
-        //analyzeLiveness(f);
-        if(!(max_sgpr + max_vgpr + max_acc_vgpr))
-            continue;
-        /*
-           if(first)
-           printf("%s",filename);
-           else
-           puts("");
-           printf(",%s,%u,%u,%u\n",f->name().c_str(), max_sgpr , max_vgpr, max_acc_vgpr);
-           first = false;*/
-        //cout <<__func__<< " " << f->name() <<" SGPR , VGPR ,ACC_VGPR Usage = " << max_sgpr << " " << max_vgpr << " " << max_acc_vgpr << endl;
-    }
-    delete dyn_co;
-    delete scs;
-}
 
 // return ceil(A/B)
 uint32_t ceil( uint32_t A , uint32_t B){
     return (A+B-1)/B;
+}
+
+void setupPrettyNameMapping(char * binaryPath){
+    std::string filePath(binaryPath);
+    std::ifstream inputFile(filePath);
+
+    inputFile.seekg(0, std::ios::end);
+    size_t length = inputFile.tellg();
+    inputFile.seekg(0, std::ios::beg);
+
+    char *buffer = new char[length];
+    inputFile.read(buffer, length);
+
+    // for loading symtab
+    std::string name;
+    bool error;
+    Symtab symtab(reinterpret_cast<unsigned char *>(buffer), length, name, /*defensive_binary=*/false, error);
+    if (error) {
+        std::cerr << "error loading " << filePath << '\n';
+        exit(1);
+    }
+
+    std::vector<Symbol *> symbols;
+    symtab.getAllSymbols(symbols);
+
+    for (const Symbol *symbol : symbols) {
+        std::string prettyName = symbol->getPrettyName();
+        std::string kName = symbol->getMangledName();
+        prettyNameMap[kName] = prettyName;
+        uglyNameMap[prettyName] = kName;
+    }
+
 }
 void parseKD(char * binaryPath){
 
@@ -270,6 +190,7 @@ void parseKD(char * binaryPath){
             KernelDescriptor kd(symbol, elfHeader);
             uint32_t granulated_sgpr_count = kd.getCOMPUTE_PGM_RSRC1_GranulatedWavefrontSgprCount();
             uint32_t granulated_vgpr_count = kd.getCOMPUTE_PGM_RSRC1_GranulatedWorkitemVgprCount();
+
             if(granulated_sgpr_count){
                 granulated_sgpr_count = granulated_sgpr_count * 8 + 16;
             }
@@ -278,19 +199,19 @@ void parseKD(char * binaryPath){
                     //printf("granulated_vgpr_count = %u\n",granulated_vgpr_count);
                     granulated_vgpr_count = granulated_vgpr_count * 8 +  8;
                 }else if(kd.isGfx9()){
-                    //printf("granulated_vgpr_count = %u\n",granulated_vgpr_count);
                     granulated_vgpr_count = granulated_vgpr_count * 4 + 4;
                 }
             }
 
-            std::string kname = kd.name;
+            std::string kname = symbol->getPrettyName();
             kname.erase(kname.length()-3);
             if(kernel_data.count(kname)==0){
-                assert(0);
-            }else{
-                kernel_data[kname].kd_sgpr_count = granulated_sgpr_count;
-                kernel_data[kname].kd_vgpr_count = granulated_vgpr_count;
-            } 
+                per_kernel_data  data;
+                kernel_data[kname] = data;
+            }
+
+            kernel_data[kname].kd_sgpr_count = granulated_sgpr_count;
+            kernel_data[kname].kd_vgpr_count = granulated_vgpr_count;
 
             //printf("granulated_sgpr_count = %u , granulated_vgpr_count = %u\n", granulated_sgpr_count, granulated_vgpr_count );
         }
@@ -316,73 +237,7 @@ void parseBitArray(bitArray &ba, uint32_t & sgpr_count , uint32_t & vgpr_count ,
 }
 
 bool fname_not_printed = true;
-void analyzeLiveness(ParseAPI::Function * f){
-    //printf("callling analyze liveness on function %s\n",f->name().c_str());
-    LivenessAnalyzer la(f->isrc()->getArch(),f->obj()->cs()->getAddressWidth());
-    uint32_t sgpr_count ,vgpr_count ,agpr_count;
-    auto blocks = f->blocks();
-    auto bit = blocks.begin();
-    bitArray liveRegs;
 
-    std::string kname = f->name();
-    bool kname_not_printed = true;
-    for(; bit != blocks.end(); bit++){
-        Block * bb = * bit;
-        Address curAddr = bb->start();
-        Instruction curInsn = bb->getInsn(curAddr);
-
-        InsnLoc i(bb,curAddr,curInsn);
-        Location loc(f,i);
-
-        liveRegs = la.getABI()->getBitArray();;
-        if(la.query(loc,LivenessAnalyzer::Before,liveRegs)){
-            //cout << "Liveness at block address " << std::hex << curAddr; // << " = " << liveRegs << endl;
-            parseBitArray(liveRegs,sgpr_count ,vgpr_count , agpr_count);
-            //printf("block at %lx : %d %d %d\n", curAddr , sgpr_count ,vgpr_count , agpr_count);
-            
-
-            if(fname_not_printed){
-                printf("%s,",filename);
-                fname_not_printed = false;
-            }else{
-                printf(",");;
-            }
-            if(kname_not_printed){
-                printf("%s,",kname.c_str());
-                kname_not_printed = false;
-            }else{
-                printf(",");;
-            }
-
-
-            printf("0x%lx,%d,%d\n",curAddr,sgpr_count,vgpr_count);
-        }
-        liveRegs.reset();
-        //la.query(loc, LivenessAnalyzer::Before ,arg_register[0], used);
-
-        //printf("At addresss %lx s0 used ? = %u\n", curAddr, used);
-
-    }
-    printf(",,note_reported,%d,%d\n",kernel_data[kname].note_sgpr_count,kernel_data[kname].note_vgpr_count);
-
-} 
-
-void parseLiveness( char * binary_path ){
-    SymtabCodeSource * scs = new SymtabCodeSource(binary_path);
-
-    CodeObject * dyn_co = new CodeObject(scs);
-
-    dyn_co->parse();
-    auto arch = scs -> getArch();
-    InstructionDecoder decoder("",InstructionDecoder::maxInstructionLength,arch);
-    const CodeObject::funclist & all = dyn_co->funcs();
-    auto fit = all.begin();
-    for( ; fit != all.end(); fit++){
-        ParseAPI::Function * f = * fit;
-        analyzeLiveness(f);
-    }
-
-}
 int main(int argc, char * argv[]){
     if(argc < 2){
         printf("usage list_args <name of .note file>\n");
@@ -397,24 +252,22 @@ int main(int argc, char * argv[]){
         assert(0 && "failed to load .note section "); 
     }
     filename = argv[1];
-
+    setupPrettyNameMapping(filename);
     parse_note(noteSection);
-    parseLiveness(argv[1]);
-    /*parse_note(noteSection);
-      parseInstructions(argv[1]);
-      parseKD(argv[1]);
+    parseKD(argv[1]);
 
-      bool first_print = true;
-      for ( auto & kit : kernel_data){
-      if(first_print)
-      cout << argv[1] << ",";
-      else
-      cout << ",";
-      cout << kit.first << ",";
-      cout << kit.second.parse_sgpr_count << "," << kit.second.note_sgpr_count << "," << kit.second.kd_sgpr_count << ",";
-      cout << kit.second.parse_vgpr_count << "," << kit.second.note_vgpr_count << "," << kit.second.kd_vgpr_count << endl;
-      first_print = false;
-      }*/
+    for ( auto & kit : kernel_data){
+        cout << argv[1] << ",";
+        cout << uglyNameMap[kit.first] << ",";
+        if(kit.second.note_sgpr_count > kit.second.kd_sgpr_count){
+            assert(0);
+        }
+        if(kit.second.note_vgpr_count > kit.second.kd_vgpr_count){
+            assert(0);
+        }
+        cout <<  kit.second.note_sgpr_count << "," << kit.second.kd_sgpr_count << ",";
+        cout <<  kit.second.note_vgpr_count << "," << kit.second.kd_vgpr_count << endl;
+  }
     return 0;    
 }
 
