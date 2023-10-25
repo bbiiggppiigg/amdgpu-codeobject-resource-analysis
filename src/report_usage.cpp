@@ -192,6 +192,10 @@ void parseKD(char * binaryPath){
             uint32_t granulated_vgpr_count = kd.getCOMPUTE_PGM_RSRC1_GranulatedWorkitemVgprCount();
 
             if(granulated_sgpr_count){
+                //
+                // sgprs_used 0..112
+                // granulated_sgpr-count = 2 * max(0, ceil(sgprs_used / 16) - 1)
+                // sgpr_used = ((granulated_sgpr_count / 2) + 1 ) * 16
                 granulated_sgpr_count = granulated_sgpr_count * 8 + 16;
             }
             if(granulated_vgpr_count){

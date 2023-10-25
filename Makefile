@@ -1,4 +1,4 @@
-srcs=report_usage generate_hist block_hist qq
+srcs=report_usage generate_hist block_hist raw_hist qq block_min_max_start
 
 BINS=$(addprefix bin/,$(srcs))
 
@@ -17,6 +17,14 @@ bin/generate_hist: src/generate_hist.cpp amdgpu-tooling/KernelDescriptor.cpp amd
 
 bin/block_hist: src/block_hist.cpp amdgpu-tooling/KernelDescriptor.cpp amdgpu-tooling/KdUtils.cpp
 	g++ -std=c++17 -g -Wall -Wextra -Wno-class-memaccess -I$(DYNINST_ROOT)/include -I$(TBB) -I ELFIO -I amdgpu-tooling -I msgpack-c $< amdgpu-tooling/KdUtils.cpp amdgpu-tooling/KernelDescriptor.cpp -L$(DYNINST_ROOT)/lib -Iinclude -I$(TBB) $(lDyninst) -I /opt/rocm/include -Wl,--demangle -Wl,-rpath,/opt/rocm/lib/ -L/opt/rocm/lib/-lamd_comgr -o $@
+
+bin/block_min_max_start: src/block_min_max_start.cpp amdgpu-tooling/KernelDescriptor.cpp amdgpu-tooling/KdUtils.cpp
+	g++ -std=c++17 -g -Wall -Wextra -Wno-class-memaccess -I$(DYNINST_ROOT)/include -I$(TBB) -I ELFIO -I amdgpu-tooling -I msgpack-c $< amdgpu-tooling/KdUtils.cpp amdgpu-tooling/KernelDescriptor.cpp -L$(DYNINST_ROOT)/lib -Iinclude -I$(TBB) $(lDyninst) -I /opt/rocm/include -Wl,--demangle -Wl,-rpath,/opt/rocm/lib/ -L/opt/rocm/lib/-lamd_comgr -o $@
+
+
+bin/raw_hist: src/raw_hist.cpp amdgpu-tooling/KernelDescriptor.cpp amdgpu-tooling/KdUtils.cpp
+	g++ -std=c++17 -g -Wall -Wextra -Wno-class-memaccess -I$(DYNINST_ROOT)/include -I$(TBB) -I ELFIO -I amdgpu-tooling -I msgpack-c $< amdgpu-tooling/KdUtils.cpp amdgpu-tooling/KernelDescriptor.cpp -L$(DYNINST_ROOT)/lib -Iinclude -I$(TBB) $(lDyninst) -I /opt/rocm/include -Wl,--demangle -Wl,-rpath,/opt/rocm/lib/ -L/opt/rocm/lib/-lamd_comgr -o $@
+
 
 
 bin/report_usage: src/report_usage.cpp amdgpu-tooling/KernelDescriptor.cpp amdgpu-tooling/KdUtils.cpp

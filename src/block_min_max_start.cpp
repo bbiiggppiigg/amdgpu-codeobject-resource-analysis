@@ -9,6 +9,7 @@
 #include "InstructionDecoder.h"
 #include <vector>
 #include  <map>
+#include <algorithm>
 #include "liveness.h"
 #include "KdUtils.h"
 #include "KernelDescriptor.h"
@@ -262,14 +263,15 @@ void parseKD(char * binaryPath){
                 }
             }
 
-            std::string kname = kd.name;
+            std::string kname = symbol->getPrettyName();
             kname.erase(kname.length()-3);
             if(kernel_data.count(kname)==0){
-                assert(0);
-            }else{
-                kernel_data[kname].kd_sgpr_count = granulated_sgpr_count;
-                kernel_data[kname].kd_vgpr_count = granulated_vgpr_count;
-            } 
+                per_kernel_data data;
+                kernel_data[kname] = data;
+            }
+            kernel_data[kname].kd_sgpr_count = granulated_sgpr_count;
+            kernel_data[kname].kd_vgpr_count = granulated_vgpr_count;
+         
 
             //printf("granulated_sgpr_count = %u , granulated_vgpr_count = %u\n", granulated_sgpr_count, granulated_vgpr_count );
         }
@@ -294,7 +296,7 @@ void parseBitArray(bitArray &ba, uint32_t & sgpr_count , uint32_t & vgpr_count ,
 
 }
 
-void analyzeLiveness(ParseAPI::Function * f){
+void analyzeLiveness(ParseAPI::Function * f, InstructionDecoder & decoder){
     //printf("callling analyze liveness on function %s\n",f->name().c_str());
     LivenessAnalyzer la(f->isrc()->getArch(),f->obj()->cs()->getAddressWidth());
     uint32_t sgpr_count ,vgpr_count ,agpr_count;
@@ -304,19 +306,47 @@ void analyzeLiveness(ParseAPI::Function * f){
     vector<Address> addrs;
     std::string kname = f->name();
     const char * ckname = kname.c_str();
-
+    
+    //printf("%s,%s,%d,%d",filename,ckname,kernel_data[kname].note_sgpr_count,kernel_data[kname].note_vgpr_count);
+    uint32_t s_alloc = std::min(kernel_data[kname].kd_sgpr_count,102u);
+    uint32_t v_alloc = std::min(kernel_data[kname].kd_vgpr_count,256u);
+    printf("%u %u\n",s_alloc,v_alloc);
     for(; bit != blocks.end(); bit++){
         Block * bb = * bit;
-        printf("%s,%s,%d,%d",filename,ckname,kernel_data[kname].note_sgpr_count,kernel_data[kname].note_vgpr_count);
         Location loc(f,bb);
-        if(la.queryBlock(loc,LivenessAnalyzer::Before, addrs, liveRegs)){
+        uint32_t s_block_min = 102 , s_block_start , s_block_max = 0, s_block_last, s_block_post;
+        uint32_t v_block_min = 102, v_block_start , v_block_max = 0 , v_block_last , v_block_post;
+        Instruction instr = decoder.decode(
+            (unsigned char * ) f->isrc()->getPtrToInstruction(bb->lastInsnAddr()));    
+        //cout << "BB Last Instr @" << std::hex << bb->lastInsnAddr()  << " : " << instr.format() << endl;
+        auto category = instr.getCategory();
+        bitArray blockOutLiveRegs;
+        if(la.queryBlock(loc,LivenessAnalyzer::Before, addrs, liveRegs, blockOutLiveRegs)){
             assert(addrs.size() == liveRegs.size());
             for ( int r_i = addrs.size() - 1 ; r_i >=0 ; r_i --){
                 parseBitArray(liveRegs[r_i], sgpr_count, vgpr_count, agpr_count);     
-                printf(",0x%lx,%d,%d",(unsigned long) addrs[r_i], sgpr_count, vgpr_count);
+                //printf(",0x%lx,%d,%d",(unsigned long) addrs[r_i], sgpr_count, vgpr_count);
+                if(sgpr_count < s_block_min)
+                    s_block_min = sgpr_count;
+                if(vgpr_count < v_block_min)
+                    v_block_min = vgpr_count;
             }
+
+            parseBitArray(liveRegs[addrs.size()-1],s_block_start,v_block_start,agpr_count);
+            parseBitArray(liveRegs[0],s_block_last,v_block_last,agpr_count);
+            parseBitArray(blockOutLiveRegs,s_block_post,v_block_post,agpr_count);
+
+            if (category == c_BranchInsn || category == c_GPUKernelExitInsn){
+                //cout << " Is BRNAHC !! " << endl;
+                printf("%u %u %u %u %u %u\n",s_alloc - s_block_min, s_alloc - s_block_start , s_alloc - s_block_last, v_alloc - v_block_min, v_alloc - v_block_start, v_alloc - v_block_last);
+            }else{
+
+                printf("%u %u %u %u %u %u\n",s_alloc - s_block_min, s_alloc - s_block_start , s_alloc - s_block_post, v_alloc - v_block_min, v_alloc - v_block_start, v_alloc - v_block_post);
+            }
+     
+            //printf("%u %u %u %u %u %u\n",s_alloc - s_block_min, s_alloc - s_block_max, s_alloc - s_block_start, v_alloc - v_block_min, v_alloc - v_block_max , v_alloc - v_block_start);
         }
-        puts("");
+
         liveRegs.clear();
         addrs.clear();
     }
@@ -335,7 +365,7 @@ void parseLiveness( char * binary_path ){
     auto fit = all.begin();
     for( ; fit != all.end(); fit++){
         ParseAPI::Function * f = * fit;
-        analyzeLiveness(f);
+        analyzeLiveness(f, decoder);
     }
 
 }
@@ -348,29 +378,10 @@ int main(int argc, char * argv[]){
     if(!codeObject.load(argv[1])){
         assert(0 && "failed to load code object using elfio ");
     }
-    ELFIO::section * noteSection;
-    if( !(noteSection = getSection(".note", codeObject)) ){
-        assert(0 && "failed to load .note section "); 
-    }
     filename = argv[1];
-
-    parse_note(noteSection);
+    parseKD(argv[1]);
     parseLiveness(argv[1]);
-    /*parse_note(noteSection);
-      parseInstructions(argv[1]);
-      parseKD(argv[1]);
 
-      bool first_print = true;
-      for ( auto & kit : kernel_data){
-      if(first_print)
-      cout << argv[1] << ",";
-      else
-      cout << ",";
-      cout << kit.first << ",";
-      cout << kit.second.parse_sgpr_count << "," << kit.second.note_sgpr_count << "," << kit.second.kd_sgpr_count << ",";
-      cout << kit.second.parse_vgpr_count << "," << kit.second.note_vgpr_count << "," << kit.second.kd_vgpr_count << endl;
-      first_print = false;
-      }*/
     return 0;    
 }
 
