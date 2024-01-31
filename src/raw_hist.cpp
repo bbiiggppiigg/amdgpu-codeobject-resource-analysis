@@ -1,3 +1,4 @@
+#include <msgpack.hpp>
 #include <string>
 #include <iostream>
 #include <sstream>
@@ -7,8 +8,10 @@
 #include "CodeObject.h"
 #include "InstructionDecoder.h"
 #include <vector>
-#include <map>
+#include  <map>
 #include "liveness.h"
+#include "KdUtils.h"
+#include "KernelDescriptor.h"
 #include "helper.hpp"
 
 using namespace Dyninst::ParseAPI;
@@ -17,7 +20,6 @@ using namespace Dyninst::SymtabAPI;
 
 using std::string, std::cout , std::endl;
 char * filename;
-bool first = true;
 void analyzeLiveness(ParseAPI::Function * f, std::map<std::string, per_kernel_data> & kernel_data){
     //printf("callling analyze liveness on function %s\n",f->name().c_str());
     LivenessAnalyzer la(f->isrc()->getArch(),f->obj()->cs()->getAddressWidth());
@@ -31,16 +33,20 @@ void analyzeLiveness(ParseAPI::Function * f, std::map<std::string, per_kernel_da
     bitArray blockOutLiveRegs;
     for(; bit != blocks.end(); bit++){
         Block * bb = * bit;
-        printf("%s,%s,%d,%d",filename,ckname,kernel_data[kname].note_sgpr_count,kernel_data[kname].note_vgpr_count);
+        Address curAddr = bb->start();
+        Dyninst::Address endAddr = bb->end();
+        printf("%s,%s,%d,%d\n",filename,ckname,kernel_data[kname].note_sgpr_count,kernel_data[kname].note_vgpr_count);
+        
         Location loc(f,bb);
-        if(la.queryBlock(loc,LivenessAnalyzer::Before, addrs, liveRegs, blockOutLiveRegs)){
+        if(la.queryBlock(loc,LivenessAnalyzer::Before, addrs, liveRegs,blockOutLiveRegs)){
             assert(addrs.size() == liveRegs.size());
             for ( int r_i = addrs.size() - 1 ; r_i >=0 ; r_i --){
-                parseBitArray(liveRegs[r_i], sgpr_count, vgpr_count, agpr_count);     
-                printf(",0x%lx,%d,%d",(unsigned long) addrs[r_i], sgpr_count, vgpr_count);
+                std::cout << std::hex << addrs[r_i] << "," << liveRegs[r_i] << std::endl;
+                //parseBitArray(liveRegs[r_i], sgpr_count, vgpr_count, agpr_count);     
+                //printf(",0x%lx,%d,%d",(unsigned long) addrs[r_i], sgpr_count, vgpr_count);
             }
         }
-        puts("");
+        //puts("");
         liveRegs.clear();
         addrs.clear();
     }
@@ -82,6 +88,7 @@ int main(int argc, char * argv[]){
     std::map<std::string, per_kernel_data> kernel_data;
     parse_note(noteSection,kernel_data,prettyNameMap);
     parseLiveness(argv[1],kernel_data);
+
     /*parse_note(noteSection);
       parseInstructions(argv[1]);
       parseKD(argv[1]);
