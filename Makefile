@@ -1,7 +1,7 @@
 srcs=report_usage block_hist generate_hist raw_hist block_min_max_start critical_block
 
 EXES := $(foreach item,$(srcs),bin/$(item).exe)
-all: $(EXES) bin/helper.o
+all: bin/helper.o $(EXES)
 
 DYNINST_ROOT=/home/wuxx1279/bin/dyninst-liveness
 ifeq ($(DYNINST_ROOT),)
