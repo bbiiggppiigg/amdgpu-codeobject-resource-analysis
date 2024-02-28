@@ -1,4 +1,4 @@
-srcs=report_usage block_hist generate_hist raw_hist block_min_max_start critical_block
+srcs=report_usage block_hist raw_hist debug_hist #block_min_max_start critical_block generate_hist
 
 EXES := $(foreach item,$(srcs),bin/$(item).exe)
 all: bin/helper.o $(EXES)

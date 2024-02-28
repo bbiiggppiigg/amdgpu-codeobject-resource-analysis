@@ -31,13 +31,13 @@ void analyzeLiveness(ParseAPI::Function * f, std::map<std::string, per_kernel_da
     bitArray blockOutLiveRegs;
     for(; bit != blocks.end(); bit++){
         Block * bb = * bit;
-        printf("%s,%s,%d,%d",filename,ckname,kernel_data[kname].note_sgpr_count,kernel_data[kname].note_vgpr_count);
+        printf("%s,%s,%d,%d,%d",filename,ckname,kernel_data[kname].note_sgpr_count,kernel_data[kname].note_vgpr_count,kernel_data[kname].note_agpr_count);
         Location loc(f,bb);
         if(la.queryBlock(loc,LivenessAnalyzer::Before, addrs, liveRegs, blockOutLiveRegs)){
             assert(addrs.size() == liveRegs.size());
             for ( int r_i = addrs.size() - 1 ; r_i >=0 ; r_i --){
                 parseBitArray(liveRegs[r_i], sgpr_count, vgpr_count, agpr_count);     
-                printf(",0x%lx,%d,%d",(unsigned long) addrs[r_i], sgpr_count, vgpr_count);
+                printf(",0x%lx,%d,%d,%d",(unsigned long) addrs[r_i], sgpr_count, vgpr_count, agpr_count);
             }
         }
         puts("");
@@ -65,7 +65,7 @@ void parseLiveness( char * binary_path, std::map<std::string, per_kernel_data> &
 }
 int main(int argc, char * argv[]){
     if(argc < 2){
-        printf("usage list_args <name of .note file>\n");
+        printf("usage list_args <name of .hsaco file>\n");
         return -1;
     }
     ELFIO::elfio codeObject;
@@ -80,23 +80,23 @@ int main(int argc, char * argv[]){
     std::map<std::string, std::string> prettyNameMap;
     std::map<std::string, std::string> uglyNameMap;
     std::map<std::string, per_kernel_data> kernel_data;
+
+    setupPrettyNameMapping(filename,prettyNameMap,uglyNameMap);
+    parseKD(argv[1],kernel_data);
     parse_note(noteSection,kernel_data,prettyNameMap);
     parseLiveness(argv[1],kernel_data);
-    /*parse_note(noteSection);
-      parseInstructions(argv[1]);
-      parseKD(argv[1]);
-
-      bool first_print = true;
-      for ( auto & kit : kernel_data){
-      if(first_print)
-      cout << argv[1] << ",";
-      else
-      cout << ",";
-      cout << kit.first << ",";
-      cout << kit.second.parse_sgpr_count << "," << kit.second.note_sgpr_count << "," << kit.second.kd_sgpr_count << ",";
-      cout << kit.second.parse_vgpr_count << "," << kit.second.note_vgpr_count << "," << kit.second.kd_vgpr_count << endl;
-      first_print = false;
-      }*/
+/*    
+  bool first_print = true;
+  for ( auto & kit : kernel_data){
+  if(first_print)
+  cout << argv[1] << ",";
+  else
+  cout << ",";
+  cout << kit.first << ",";
+  cout << kit.second.parse_sgpr_count << "," << kit.second.note_sgpr_count << "," << kit.second.kd_sgpr_count << ",";
+  cout << kit.second.parse_vgpr_count << "," << kit.second.note_vgpr_count << "," << kit.second.kd_vgpr_count << endl;
+  first_print = false;
+  }*/
     return 0;    
 }
 

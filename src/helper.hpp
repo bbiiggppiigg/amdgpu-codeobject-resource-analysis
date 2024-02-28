@@ -11,10 +11,16 @@
 typedef struct {
     uint32_t note_sgpr_count;
     uint32_t note_vgpr_count;
+    uint32_t note_agpr_count;
     uint32_t kd_sgpr_count;
     uint32_t kd_vgpr_count;
+    uint32_t kd_agpr_count;
     uint32_t parse_sgpr_count;
     uint32_t parse_vgpr_count;
+    uint32_t parse_agpr_count;
+    uint32_t spill_sgpr_count;
+    uint32_t spill_vgpr_count;
+
 }per_kernel_data;
 
 void parse_note(ELFIO::section * noteSection, std::map<std::string, per_kernel_data > &kernel_data, std::map<std::string, std::string> & prettyNameMap);

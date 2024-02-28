@@ -258,6 +258,8 @@ public:
 
   std::string name;
 
+  llvm::amdhsa::kernel_descriptor_t kdRepr;
+
 private:
   // read numBytes bytes starting at fromIndex in rawBytes into data
   void readToKd(const uint8_t *rawBytes, size_t rawBytesLength,
@@ -281,7 +283,6 @@ private:
 
 
   // canonical kernel descriptor struct
-  llvm::amdhsa::kernel_descriptor_t kdRepr;
 
   const Dyninst::Elf_X *elfHdr;
 

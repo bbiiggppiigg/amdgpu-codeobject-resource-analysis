@@ -13,13 +13,29 @@
 #include "KdUtils.h"
 #include "KernelDescriptor.h"
 #include "helper.hpp"
-
+#include <stdarg.h>
 using namespace Dyninst::ParseAPI;
 using namespace Dyninst::InstructionAPI;
 using namespace Dyninst::SymtabAPI;
 
 using std::string, std::cout , std::endl;
 
+int debug_initialized = 0;
+int debug_enable = 0;
+int warning_printf_int(const char * format, ...){
+    if(!debug_initialized){
+        if(getenv("ANALYZE_CODEOBJECT_WARNING"))
+            debug_enable = 1;
+    }
+    debug_initialized = 1;
+    if(!debug_enable) return 0;
+    va_list va;
+    va_start(va,format);
+    int ret =vfprintf(stderr,format,va);
+    va_end(va);
+    return ret;
+}
+#define warning_printf(...) do { if(!debug_initialized || debug_enable){warning_printf_int(__VA_ARGS__);} }while(0);
 
 void parse_note(ELFIO::section * noteSection, std::map<std::string, per_kernel_data > & kernel_data, std::map<std::string, std::string> & prettyNameMap)
 {
@@ -74,6 +90,7 @@ void parse_note(ELFIO::section * noteSection, std::map<std::string, per_kernel_d
         kernarg_list_map[".private_segment_fixed_size"].convert(private_segment_fixed_size);
         kernarg_list_map[".sgpr_count"].convert(sgpr_count); 
         kernarg_list_map[".vgpr_count"].convert(vgpr_count); 
+        kernarg_list_map[".agpr_count"].convert(agpr_count); 
         try{
             kernarg_list_map[".agpr_count"].convert(agpr_count); 
         }catch(...){
@@ -87,14 +104,13 @@ void parse_note(ELFIO::section * noteSection, std::map<std::string, per_kernel_d
             kernel_data[pname] = data;
         }
         
+        kernel_data[pname].spill_sgpr_count = sgpr_spill_count;
+        kernel_data[pname].spill_vgpr_count = vgpr_spill_count;
+        if(sgpr_spill_count | vgpr_spill_count)
+            warning_printf("Warning ! sgpr_spill_count = %u, vgpr_spill_count = %u\n",sgpr_spill_count,vgpr_spill_count);
         kernel_data[pname].note_sgpr_count = sgpr_count;
         kernel_data[pname].note_vgpr_count = vgpr_count;
-#if 0
-        cout << " kernel name = " << kname << endl;
-        cout << " sgpr , vgpr , agpr usage = " << sgpr_count << " " << vgpr_count << " " << agpr_count << endl;
-        cout << " kernarg_segment_size, group_segment_size(LDS) , private_segment_size = " << kernarg_segment_size 
-            << " " << group_segment_fixed_size << " " << private_segment_fixed_size << endl;
-#endif
+        kernel_data[pname].note_agpr_count = agpr_count;
     }
 }
 
@@ -171,13 +187,23 @@ void parseKD(char * binaryPath,std::map<std::string, per_kernel_data > & kernel_
             uint32_t granulated_sgpr_count = kd.getCOMPUTE_PGM_RSRC1_GranulatedWavefrontSgprCount();
             uint32_t granulated_vgpr_count = kd.getCOMPUTE_PGM_RSRC1_GranulatedWorkitemVgprCount();
 
+            std::string kname = symbol->getPrettyName();
+            kname.erase(kname.length()-3);
+            if(kernel_data.count(kname)==0){
+                per_kernel_data  data;
+                kernel_data[kname] = data;
+            }
+
+
             uint32_t sgpr_count = 16;
+            uint32_t vgpr_count = 0;
+            uint32_t agpr_count = 0;
             if(granulated_sgpr_count){
                 if((granulated_sgpr_count %2)){
                     granulated_sgpr_count -= 1;
-                    printf("Warning, granulated_sgpr_count = %u, is not even, offset = %lx\n",granulated_sgpr_count,symbol->getOffset());
-                    printf("pgm_rsrc1 = %x\n",kd.kdRepr.compute_pgm_rsrc1);
-                    printf("new count should be %u\n",granulated_sgpr_count*8+16);
+                    warning_printf("Warning, granulated_sgpr_count = %u, is not even, offset = %lx\n",granulated_sgpr_count,symbol->getOffset());
+                    warning_printf("pgm_rsrc1 = %x\n",kd.kdRepr.compute_pgm_rsrc1);
+                    warning_printf("new count should be %u\n",granulated_sgpr_count*8+16);
                 }
                 //
                 // sgprs_used 0..112
@@ -194,29 +220,33 @@ void parseKD(char * binaryPath,std::map<std::string, per_kernel_data > & kernel_
                 //
                 sgpr_count = granulated_sgpr_count * 8 + 16;
                 if(sgpr_count%16){
-                    printf("Warning, sgpr_count = %u, is not x16, offset = %lx\n",sgpr_count,symbol->getOffset());
-                    printf("pgm_rsrc1 = %x\n",kd.kdRepr.compute_pgm_rsrc1);
-                    printf("new count should be %u\n",granulated_sgpr_count*8+16);
+                    warning_printf("Warning, sgpr_count = %u, is not x16, offset = %lx\n",sgpr_count,symbol->getOffset());
+                    warning_printf("pgm_rsrc1 = %x\n",kd.kdRepr.compute_pgm_rsrc1);
+                    warning_printf("new count should be %u\n",granulated_sgpr_count*8+16);
                 }
             }
             if(granulated_vgpr_count){
                 if(kd.isGfx90aOr940()){
+                    uint32_t accum_offset = kd.getCOMPUTE_PGM_RSRC3_AccumOffset();
+                    uint32_t agpr_offset = (accum_offset+1)*4;
+                    assert(accum_offset!=0);
                     //printf("granulated_vgpr_count = %u\n",granulated_vgpr_count);
-                    granulated_vgpr_count = granulated_vgpr_count * 8 +  8;
+                    agpr_count = (granulated_vgpr_count +1) * 8 - agpr_offset;
+                    vgpr_count = agpr_offset;
+                    if(agpr_count !=0){
+                    
+                        warning_printf("agpr_count = %u, note agpr_count = %u, spill_sgpr_count = %u, spill_vgpr_count = %u\n",agpr_count,kernel_data[kname].note_agpr_count,
+                            kernel_data[kname].spill_sgpr_count,kernel_data[kname].spill_vgpr_count);
+                    }
                 }else if(kd.isGfx9()){
-                    granulated_vgpr_count = granulated_vgpr_count * 4 + 4;
+                    vgpr_count = granulated_vgpr_count * 4 + 4;
+                    agpr_count = vgpr_count;
                 }
             }
 
-            std::string kname = symbol->getPrettyName();
-            kname.erase(kname.length()-3);
-            if(kernel_data.count(kname)==0){
-                per_kernel_data  data;
-                kernel_data[kname] = data;
-            }
-
             kernel_data[kname].kd_sgpr_count = sgpr_count;
-            kernel_data[kname].kd_vgpr_count = granulated_vgpr_count;
+            kernel_data[kname].kd_vgpr_count = vgpr_count;
+            kernel_data[kname].kd_agpr_count = agpr_count;
 
             //printf("granulated_sgpr_count = %u , granulated_vgpr_count = %u\n", granulated_sgpr_count, granulated_vgpr_count );
         }
@@ -247,8 +277,10 @@ void parseBitArray(bitArray &ba, uint32_t & sgpr_count , uint32_t & vgpr_count ,
 
 
 void getMaxRegisterUsed(InstructionDecoder & decoder, ParseAPI::Function * f, int32_t & max_sgpr , int32_t & max_vgpr ,int32_t & max_acc_vgpr){
-    uint64_t max_sgpr_addr, max_vgpr_addr ,max_acc_vgpr_addr;
-    max_sgpr_addr = max_vgpr_addr = max_acc_vgpr_addr = 0;
+    //uint64_t max_sgpr_addr, max_vgpr_addr ,max_acc_vgpr_addr;
+    //max_sgpr_addr = max_vgpr_addr = max_acc_vgpr_addr = 0;
+    //
+    LivenessAnalyzer la(f->isrc()->getArch(),f->obj()->cs()->getAddressWidth());                
     std::map<Dyninst::Address,bool> seen;
     auto blocks = f->blocks();
     auto bit = blocks.begin();
@@ -262,9 +294,17 @@ void getMaxRegisterUsed(InstructionDecoder & decoder, ParseAPI::Function * f, in
         while( currAddr < endAddr){
             Instruction instr = decoder.decode(
                     (unsigned char * ) f->isrc()->getPtrToInstruction(currAddr));    
-#ifdef DEBUG
+
             cout << std::hex << " " << currAddr << " " << instr.format() << endl;
-#endif
+            if(1){
+            //if (instr.format().find("ACCV") != string::npos){
+                InsnLoc il(b,currAddr,instr);
+                Location loc(f,il);
+                bitArray liveRegs;
+                la.query(loc,LivenessAnalyzer::Before,liveRegs);
+                cout << liveRegs << endl;
+            } 
+           
             std::vector<Dyninst::InstructionAPI::Operand> operands;
             instr.getOperands(operands);
             for( auto & opr : operands){
@@ -277,15 +317,15 @@ void getMaxRegisterUsed(InstructionDecoder & decoder, ParseAPI::Function * f, in
 
                     if( IS_SGPR(reg_class) & (max_sgpr < reg_id) ){
                         max_sgpr = reg_id;
-                        max_sgpr_addr = currAddr;
+                        //max_sgpr_addr = currAddr;
                     }
                     if( IS_VGPR(reg_class) & (max_vgpr < reg_id) ){
                         max_vgpr = reg_id;
-                        max_vgpr_addr = currAddr;
+                        //max_vgpr_addr = currAddr;
                     }
                     if( IS_ACC_VGPR(reg_class) & (max_acc_vgpr < reg_id) ){
                         max_acc_vgpr = reg_id;
-                        max_acc_vgpr_addr = currAddr;
+                        //max_acc_vgpr_addr = currAddr;
                     }
                 }
             }
@@ -317,16 +357,18 @@ void parseInstructions( char * binary_path, std::map<std::string, per_kernel_dat
         ParseAPI::Function * f = * fit;
 
         std::string kname = f->name();
-        int32_t max_sgpr, max_vgpr , max_acc_vgpr;
-        getMaxRegisterUsed(decoder, f , max_sgpr  , max_vgpr, max_acc_vgpr);
+        int32_t max_sgpr, max_vgpr , max_agpr;
+        getMaxRegisterUsed(decoder, f , max_sgpr  , max_vgpr, max_agpr);
+        //assert(max_agpr==0);
         if(kernel_data.count(kname)==0){
             assert(0);
         }else{
             kernel_data[kname].parse_sgpr_count = max_sgpr;
             kernel_data[kname].parse_vgpr_count = max_vgpr;
+            kernel_data[kname].parse_agpr_count = max_agpr;
         } 
         //analyzeLiveness(f);
-        if(!(max_sgpr + max_vgpr + max_acc_vgpr))
+        if(!(max_sgpr + max_vgpr + max_agpr))
             continue;
     }
     delete dyn_co;

@@ -55,7 +55,8 @@ int main(int argc, char * argv[]){
             assert(0);
         }
         cout <<  kit.second.note_sgpr_count << "," << kit.second.kd_sgpr_count << ",";
-        cout <<  kit.second.note_vgpr_count << "," << kit.second.kd_vgpr_count << endl;
+        cout <<  kit.second.note_vgpr_count << "," << kit.second.kd_vgpr_count << ",";
+        cout <<  kit.second.note_agpr_count << "," << kit.second.kd_agpr_count <<  endl;
   }
     return 0;    
 }
